@@ -9,3 +9,5 @@
 ### Практическое задание 3. [Docker](./task_03.md)
 
 ### Практическое задание 4. [Docker compose](./task_04.md)
+
+### Практическое задание 5. [Git. Github Actions](./task_05.md)
