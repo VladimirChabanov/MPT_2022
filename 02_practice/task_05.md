@@ -576,10 +576,10 @@
 
 95. [docker] Закоммитьте созданный workflow, но пока не отправляйте на GitHub.
 
-96. [docker] Добавим Dockerfile. Для этого в корне репозитория создайте каталог "docker" и в нём создайте файл с именем "Dockerfile" содержащий:
+96. [docker] Добавим Dockerfile. Для этого в корне репозитория создайте каталог "docker" и в нём создайте файл с именем "Dockerfile" содержащий (версию python укажите свою):
 
     ```dockerfile
-    FROM python:3.7-alpine3.12
+    FROM python:3.10.6-alpine
     WORKDIR /app
     COPY requirements.txt /app
     COPY /src/app /app
