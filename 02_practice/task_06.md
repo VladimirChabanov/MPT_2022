@@ -509,7 +509,387 @@ sudo usermod -aG docker $USER
 
 Подход называемый *Инфраструктура как код* (IaC) помогает решить подобного рода проблемы. В частности в Jenkins есть возможность описывать задания в виде файла-скрипта, который называется -Pipeline.
 
-!!! Это не конец. Задание в процессе доработки
+#### Простой Pipeline
+
+1. Если на этапе установки Jenkins вы установили рекомендуемые плагины, то у вас уже присутствует в системе плагин [Pipeline](https://plugins.jenkins.io/workflow-aggregator/), а в меню создания новых job-ов, соответственно есть пункт Pipeline.  
+   Если у вас нет такого пункта, то установите плагин;
+
+2. Создайте новый job типа "Pipeline".  
+   Здесь как и ранее вы увидите блок настроек, в том числе триггеры запуска job-а, а в самом низу страницы, в блоке "Pipeline" будет поле для ввода кода.
+
+3. Для начала создадим простой pipeline отображающий на экране текстовое сообщение:  
+   ```groovy
+   pipeline{
+       agent any
+       stages{
+           stage('Print Hello'){
+               steps{
+                   echo 'Hello World!'
+               }
+           }
+       }
+   }
+   ```
+
+   Каждый pipeline содержит *обязательный* корневой элемент `pipeline`. В фигурных скобках должны присутствовать два *обязательных* элемента: `agent` и `stages`:
+
+   - Элемент `agent` указывает на каком Jenkins-агенте будет выполнен pipeline. В этой работе мы настраивали только один агент, но часто их бывает несколько, например по одному для каждой ОС и разрядности системы.  
+     Данный элемент может быть указан как для всего pipeline, так и для каждой стадии (`stage`) отдельно. В данном случае мы указываем один на весь pipeline и разрешаем его выполнение на любом доступном агенте.  
+     Вместо Jenkins-агента можно указать docker-контейнер.
+   - Элемент `stages` содержит список всех этапов пайплайна. Обязательно должен присутствовать хотя бы один этап с одним шагом (`steps`).
+   - Элемент `stage('stage_name')` описывает один конкретный этап pipeline с названием "stage_name". Этапов может быть любое количество и, по умолчанию, они выполняются друг за другом в порядке указанном в скрипте. Этап должен содержать хотя бы один шаг.
+   - Элемент `steps` описывает шаги которые нужно выполнить в пределах текущего этапа. В нашем случае, в терминале будет напечатано сообщение "Hello World!".
+
+4. Нажмите кнопку "Save", а затем "Build Now".  
+   Через некоторое время вы увидите "Stage View" отображающий информацию о каждом этапе выполнения pipeline.
+
+   ![](./task_06_img/first_pipeline.png)
+
+5. Наведите мышку на зелёный прямоугольник и нажмите на всплывающий элемент с кнопкой "Logs".  
+   В результате должно открыться окно с сообщением "Hello World!" которое мы выводили в процессе выполнения этапа. Кроме того, полные логи pipeline можно посмотреть так же как и ранее.
+
+6. Модифицируйте pipeline следующим образом:  
+   ```groovy
+   pipeline{
+       agent any
+       stages{
+           stage('Print Info'){
+               steps{
+                   sh 'echo $JOB_NAME'
+                   sh 'whoami'
+                   sh 'pwd'
+                   sh 'ls -al'
+               }
+           }
+       }
+   }
+   ```
+
+   Здесь мы используем команду `sh`, чтобы выполнить shell-команды так, как будто их ввели в терминал руками.  В данном случае у нас 4 отдельных шага в пределах этапа "Print Info".
+
+7. Запустите pipeline и изучите логи.
+
+#### Простой Pipeline c GitHub
+
+Обычно файл с pipeline-ом размешают в корне репозитория с проектом для удобства запуска и версионирования.
+
+1. Перейдите на сервер c Jenkins и установите компилятор g++:  
+   ```bash
+   sudo apt-get install g++
+   ```
+
+   Это один из популярных компиляторов языка С++ который понадобится нам для сборки проекта.
+
+2. Создайте новую папку "cpp_hello_world" и в ней инициализируйте git-репозиторий (этот и последующие шаги можно выполнять на хостовой системе);
+
+3. В корне репозитория создайте файл "main.cpp" содержащий:  
+   ```cpp
+   #include <iostream>
+    
+   int main(){
+       std::cout << "Hello World" << std::endl;
+   }
+   ```
+
+4. Создайте коммит.
+
+5. Теперь создайте файл с именем "Jenkinsfile" содержащий:  
+
+   ``` groovy
+   pipeline{
+       agent any
+       stages{
+           stage('Print Info'){
+               steps{
+                   sh 'echo "Branch: $(git rev-parse --abbrev-ref HEAD)"'
+                   sh 'echo "Hash: $(git rev-parse HEAD)"'
+                   sh 'echo "g++ version: $(g++ --version)"'
+               }
+           }
+           stage('Build Executable file'){
+               steps{
+                   // Компилируем main.cpp и сохраняем результат в файл main
+                   sh 'g++ main.cpp -o main'
+               }
+           }
+           stage('Application Launch Test'){
+               steps{
+                   // Запускаем исполняемый файл main из текущего каталога
+                   sh './main'
+               }
+           }
+       }
+   }
+   ```
+
+   В этом пайплайне три этапа: "Print Info", "Build Executable file", "Application Launch Test".
+
+6. Создайте коммит.
+
+7. Создайте репозиторий на GitHub и отправьте туда файлы с локального репозитория.
+
+8. В Jenkins создайте новый job типа "Pipeline";
+
+9. В списке "Definition" раздела "Pipeline" выберете "Pipeline script from SCM".  
+   Теперь Jenkins будет использовать не локальный скрипт, а тот который скачает с репозитория.
+
+10. Теперь нужно указать какой репозиторий использовать:
+
+    - В списке "SCM" выберите git. В результате появятся дополнительные пункты;
+    - В "Repository URL" укажите адрес репозитория "cpp_hello_world" на GitHub;
+    - В поле "Branch Specifier" поменяйте "master" на "main"
+
+11. Т.к. мы назвали файл с pipeline-ом стандартным именем, то больше ничего менять не нужно. Но иногда в репозитории может присутствовать несколько pipeline-ов в файлах с разными именами. В этом случае можно изменить путь и имя файла в разделе "Script Path" (сейчас там написано Jenkinsfile).
+
+12. Сохраните и запустите job.  
+    Теперь вы должны увидеть результат похожий на этот:
+
+    ![](./task_06_img/git_pipeline.png)
+
+13. Посмотрите логи этапа "Application Launch Test".  
+    Вы должны увидеть сообщение "Hello World" которое вывело на экран собранное С++ приложение.
+
+14. Модифицируйте Jenkinsfile следующим образом:  
+    ```groovy
+    pipeline{
+        agent any
+        stages{
+            stage('Print Info'){
+                steps{
+                    sh 'echo "Branch: $(git rev-parse --abbrev-ref HEAD)"'
+                    sh 'echo "Hash: $(git rev-parse HEAD)"'
+                    sh 'echo "g++ version: $(g++ --version)"'
+                }
+            }
+            stage('Build Executable file'){
+                steps{
+                    // Компилируем main.cpp и сохраняем результат в файл main
+                    sh 'g++ main.cpp -o main'
+                }
+            }
+            stage('Application Launch Test'){
+                steps{
+                    // Запускаем исполняемый файл main из текущего каталога
+                    sh './main'
+                }
+            }
+        }
+    	post{
+    		success{
+    			echo 'You can go home'
+    		}
+    		failure{
+    			echo 'Sit and work on'
+    		}
+    	}
+    }
+    ```
+
+    Здесь был добавлен элемент `post`. Как следует из названия, данный элемент выполняется после завершения всех этапов и имеет ряд возможных вариантов запуска. В данном случае мы добавили 2 из них: `success` - запустится если все этапы завершились успешно и `failure` - если хотя бы один этап выдаст ошибку.  
+    Элемент `post` может быть указан не только для всего pipeline, но и для каждого этапа отдельно.
+
+15. Отправьте изменения на GitHub и перезапустите Jenkins job.  
+    В данном случае, на последнем этапе вы должны получить сообщение "You can go home".
+
+16. В репозитории переименуйте файл "main.cpp" на "app.cpp". Jenkinsfile исправлять не нужно.
+
+17. Отправьте изменения на GitHub и перезапустите Jenkins job.  
+    Теперь, этапы  "Build Executable file" и "Application Launch Test" завершились ошибкой, и вы должны получить сообщение "Sit and work on".
+
+##### Сложный Pipeline c GitHub
+
+1. Создайте в репозитории файл "unit_tests.sh" содержащий:  
+   ```bash
+   echo "Unit Tests PASS"
+   ```
+
+2. Закоммитьте изменения.
+
+3. Создайте в репозитории файл "integration_tests.sh" содержащий:  
+   ```bash
+   echo "Integration Tests PASS"
+   ```
+
+   Этот и предыдущий файлы будут у нас имитировать наличие соответствующих тесов.
+
+4. Закоммитьте изменения.
+
+5. Измените "Jenkinsfile" следующим образом:  
+   ```groovy
+   pipeline{
+       agent any
+       parameters{
+           string(name: 'FILE_NAME', defaultValue: 'app', description: 'Имя исполняемого файла')
+           booleanParam(name: 'RUN_UNIT', defaultValue: true, description: 'Запускать unit тесты')
+           booleanParam(name: 'RUN_INTEGRATION', defaultValue: true, description: 'Запускать integration тесты')
+       }
+       stages{
+           stage('Print Info'){
+               steps{
+                   sh 'echo "Branch: $(git rev-parse --abbrev-ref HEAD)"'
+                   sh 'echo "Hash: $(git rev-parse HEAD)"'
+                   sh 'echo "g++ version: $(g++ --version)"'
+               }
+           }
+           stage('Build Executable file'){
+               steps{
+                   sh """g++ app.cpp -o ${params.FILE_NAME}"""
+               }
+           }
+           stage('Run Unit Tests'){
+               when {
+                   // Этап выполнится, если выражение true 
+                   expression { return params.RUN_UNIT }
+               }
+               steps{
+                   sh """
+                      chmod u+x unit_tests.sh
+                      ./unit_tests.sh
+                      """
+               }
+           }
+           stage('Run Integration Tests'){
+               when {
+                   // Этап выполнится, если выражение true 
+                   expression { return params.RUN_INTEGRATION }
+               }
+               steps{
+                   sh """
+                      chmod u+x integration_tests.sh
+                      ./integration_tests.sh
+                      """
+               }
+           }
+           stage('Application Launch Test'){
+               steps{
+                   // Запускаем исполняемый файл main из текущего каталога
+                   sh """./${params.FILE_NAME}"""
+               }
+           }
+       }
+   	post{
+   		success{
+   			echo 'You can go home'
+   		}
+   		failure{
+   			echo 'Sit and work on'
+   		}
+   	}
+   }
+   ```
+
+   Здесь добавлены два новых элемента:
+
+   - `parameters` - предоставляет список параметров, которые пользователь должен указать при запуске конвейера. Значения заданные пользователем доступны в тексте скрипта через объект `params`.  
+     В этом скрипте присутствую 3 поля: одно текстовое типа `string` и два чекбокса типа `booleanParam`. Для каждого параметра заданы:
+     - `name` - имя под которым можно будет получить значение параметра в тексте скрипта;
+     - `defaultValue` - значение параметра по умолчанию;
+     - `description` - текст который будет отображаться возле соответствующего поля ввода.
+   - Элемент `when` - позволяет задавать условия при которых этап будет запущен или не запущен. В данном скрипте используется только одно условие, хотя их может быть и больше.
+
+   Кроме того, здесь используется синтаксис трёх кавычек `"""`. Три кавычки используются, когда нужно выполнить несколько shell команд в одном шаге и (или) когда нужно подставить переменные в скрипт.
+
+6. Закоммитьте, отправьте изменения на GitHub и перезапустите Jenkins job.  
+   При этом никаких вопросов Jenkins вам не задаст, а выполнит pipeline с параметрами по умолчанию.
+
+7. Обновите вкладку.  
+   Теперь вы должны заметить, что кнопка "Build Now" превратилась в  "Build with Parameters", т.к. Jenkins обнаружил параметры в последнем Jenkinsfile-е и автоматически внёс изменения в настройки job-а.
+
+8. Нажмите на кнопку "Build with Parameters".  В этот раз, перед запуском, Jenkins попросит вас установить значения параметров. Уберите галочки с обоих тесов и запустите сборку.  
+   Вы должны увидеть, что этапы тестирования пропущены.
+
+9. Измените "Jenkinsfile" следующим образом (название сервера "Prod" замените на своё):  
+
+   ```groovy
+   pipeline{
+       agent any
+       parameters{
+           string(name: 'FILE_NAME', defaultValue: 'app', description: 'Имя исполняемого файла')
+           booleanParam(name: 'RUN_UNIT', defaultValue: true, description: 'Запускать unit тесты')
+           booleanParam(name: 'RUN_INTEGRATION', defaultValue: true, description: 'Запускать integration тесты')
+       }
+       stages{
+           stage('Print Info'){
+               steps{
+                   sh 'echo "Branch: $(git rev-parse --abbrev-ref HEAD)"'
+                   sh 'echo "Hash: $(git rev-parse HEAD)"'
+                   sh 'echo "g++ version: $(g++ --version)"'
+               }
+           }
+           stage('Build Executable file'){
+               steps{
+                   sh """g++ app.cpp -o ${params.FILE_NAME}"""
+               }
+           }
+           stage('Run Unit Tests'){
+               when {
+                   expression { return params.RUN_UNIT }
+               }
+               steps{
+                   sh """
+                      chmod u+x unit_tests.sh
+                      ./unit_tests.sh
+                      """
+               }
+           }
+           stage('Run Integration Tests'){
+               when {
+                   expression { return params.RUN_INTEGRATION }
+               }
+               steps{
+                   sh """
+                      chmod u+x integration_tests.sh
+                      ./integration_tests.sh
+                      """
+               }
+           }
+           stage('Application Launch Test'){
+               steps{
+                   sh """./${params.FILE_NAME}"""
+               }
+           }
+           stage('Sending an artifact to Prod'){
+               steps{
+   			    // Настройки плагина Publish Over SSH
+                   sshPublisher(
+                                publishers: [
+                                    sshPublisherDesc(
+                                        configName: "Prod",
+                                        transfers: [
+                                           sshTransfer(sourceFiles: "${params.FILE_NAME}")
+                                        ]
+                                    )
+                                ]
+                   )
+               }
+           }
+       }
+       post{
+           success{
+               echo 'You can go home'
+           }
+           failure{
+               echo 'Sit and work on'
+           }
+       }
+   }
+   ```
+
+   Здесь добавился ещё один шаг: "Sending an artifact to Prod". На этом шаге мы отправляем артефакт сборки (исполняемый файл) на рабочий сервер (тот который вы создавали на шаге "Автоматизация деплоя").
+
+10. Закоммитьте и отправьте изменения на GitHub.
+
+11. В таком виде отправка не произойдёт, т.к. мы не указали ни пароль ни ключ для подключения к серверу, поэтому прежде чем запускать job перейдите в раздел "Manage Jenkins" -> "Configure System" и проскрольте до "Publish over SSH".  
+    Затем у сервера "Prod" (ваше имя) разверните раздел "Advanced" и установите галочку "Use password authentication, or use a different key".  
+    В раскрывшемся списке напишите пароль от пользователя "proger" в поле "Passphrase / Password". Теперь данные для подключения будут браться отсюда.
+
+12. Сохраните изменения и запустите job. Сервер, разумеется, должен быть запущен.
+
+13. Если всё завершилось успешно, то проверьте, что в домашнем каталоге пользователя "proger" присутствует файл "app".  
+    К сожалению вы не сможете его запустить из под пользователя "proger", т.к. сейчас у файла ответствует право `x` для всех, но если добавить это право, то файл выведет сообщение "Hello World".
+
+14. Почему же с python не было проблем и скрипт запускался после его копирования на сервер из под пользователя "proger"?  
+    Дело в том, что сам python-скрипт не является исполняемым файлом, поэтому ему право `x` не нужно. Исполняемый файл - это интерпретатор python и он просто читал содержимое нашего скрипта как обычный текст.
 
 ## Полезные ссылки
 
